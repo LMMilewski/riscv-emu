@@ -21,6 +21,9 @@
 //   - execute a risc-v program (ELF file)
 //     this mode has no dependencies beyond the standard library
 //
+//   - execute risc-v instructions from stdin
+//     starts with registers and memory set to zero
+//
 //   - step through a risc-v program and compare the state with the spike simulator
 //     - this mode requires:
 //       - Linux (for PTY)
@@ -31,6 +34,10 @@
 //
 //    riscv-emu --argv=a,hello,world --env=A=B,LANG=en_US.UTF-8 --prog=PATH_TO_RISCV_BINARY
 //
+// To execute instructions from stdin:
+//
+//    echo -n -e "\x9b\x87\xa7\x02" | riscv-emu  # executes "addiw a5,a5,42"
+//
 // To compare with spike:
 //
 //    riscv-emu --argv=a,hello,world --env=A=B,LANG=en_US.UTF-8 --prog=PATH_TO_RISCV_BINARY --spike=PATH_TO_SPIKE_BINARY
@@ -40,6 +47,7 @@ import (
 	"debug/elf"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 )
@@ -47,7 +55,7 @@ import (
 var (
 	argv     = flag.String("argv", "", "Comma-separated argv")
 	env      = flag.String("env", "", "Comma-separated env")
-	prog     = flag.String("prog", "", "Path to the program to execute (must be an ELF file).")
+	prog     = flag.String("prog", "", "Path to the program to execute (must be an ELF file). When empty, instructions are read from stdin and 'spike' must be empty.")
 	maxSteps = flag.Int("max_steps", 10000, "Maximum number of instructions to execute")
 	spike    = flag.String("spike", "", "Path to the spike binary. Non-empty means that the emulator runs one instruction at a time, and compares results with spike after every step. NOTE: this requires Linux and cgo.")
 )
@@ -62,6 +70,35 @@ func main() {
 		if err := diffWithSpike(prog, argv, env, os.ExpandEnv(*spike)); err != nil {
 			fmt.Fprintf(os.Stderr, "Can't compare VM with Spike for program %s: %v", prog, err)
 			os.Exit(1)
+		}
+		return
+	}
+
+	if prog == "" {
+		b, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Can't read the program from stdin: %v", err)
+			os.Exit(1)
+		}
+		const memSize = 100 << 20
+		const start = memSize - (10 << 20)
+		vm := NewVM(&Prog{
+			Argv:    append([]string{prog}, argv...),
+			Env:     env,
+			Start:   start,
+			MemSize: 100 << 20,
+		})
+		vm.Debug = DebugRegs | DebugMem | DebugInstr
+		copy(vm.Mem[start:start+len(b)], b)
+		for i := 0; i < *maxSteps; i++ {
+			if vm.PC >= uint64(start+len(b)) {
+				break
+			}
+			if err := vm.Run(1); err != nil && !IsExit(err) {
+				fmt.Fprintf(os.Stderr, "Can't execute %s: %v", prog, err)
+				os.Exit(1)
+			}
+			fmt.Println(vm)
 		}
 		return
 	}

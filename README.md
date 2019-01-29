@@ -17,7 +17,11 @@ riscv-emu requires a
 
 To execute a RISC-V program:
 
-  riscv-emu --argv=a,hello,world --env=A=B,LANG=en_US.UTF-8 --prog=PATH_TO_RISCV_BINARY  
+  riscv-emu --argv=a,hello,world --env=A=B,LANG=en_US.UTF-8 --prog=PATH_TO_RISCV_BINARY
+
+To exeute RISC-V instructions form stdin:
+
+  echo -n -e "\x9b\x87\xa7\x02" | riscv-emu  # executes "addiw a5,a5,42" 
 
 ## Comparing results with spike
 

@@ -33,6 +33,9 @@ func Decode(pc uint64, b []byte) (instr *Instruction, size int, err error) {
 	if size == 2 {
 		instr := uint16(b[1])<<8 | uint16(b[0])
 		in, err := rvcDecode(instr)
+		if err != nil {
+			return nil, 2, err
+		}
 		in.in = uint64(instr)
 		return in, 2, err
 	}
